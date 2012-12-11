@@ -66,6 +66,27 @@ class BingMapsProvider extends AbstractProvider implements ProviderInterface
         return $this->executeQuery($query);
     }
 
+    public function getMultiGeocodedData($address)
+    {
+
+        if (null === $this->apiKey) {
+            throw new InvalidCredentialsException('No API Key provided');
+        }
+
+        // This API doesn't handle IPs
+        if (filter_var($address, FILTER_VALIDATE_IP)) {
+            throw new UnsupportedException('The BingMapsProvider does not support IP addresses.');
+        }
+
+        /*if ('127.0.0.1' === $address) {
+            return $this->getLocalhostDefaults();
+        }*/
+
+        $query = sprintf(self::GEOCODE_ENDPOINT_URL, urlencode($address), $this->apiKey);
+        //var_dump($this->executeQueryMulti($query));
+        return $this->executeQueryMulti($query);
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -148,5 +169,71 @@ class BingMapsProvider extends AbstractProvider implements ProviderInterface
             'countryCode'   => null,
             'timezone'      => null,
         );
+    }
+
+    /**
+     * @param string $query
+     * @return array
+     */
+    protected function executeQueryMulti($query)
+    {
+        if (null !== $this->getLocale()) {
+            $query = sprintf('%s&culture=%s', $query, str_replace('_', '-', $this->getLocale()));
+        }
+
+        $content = $this->getAdapter()->getContent($query);
+
+        if (null === $content) {
+            return $this->getDefaults();
+        }
+
+        $json = json_decode($content);
+
+        if (!isset($json->resourceSets[0]->resources[0]))
+            return $this->getDefaults();
+
+        $geoData = array();
+        foreach ($json->resourceSets[0]->resources as $line)
+        {
+            $data = (array) $line;
+            $coordinates = (array) $data['geocodePoints'][0]->coordinates;
+            //var_dump($data['address']);
+            $bounds = null;
+            if (isset($data['bbox']) && is_array($data['bbox']) && count($data['bbox']) > 0) {
+                $bounds = array(
+                    'south' => $data['bbox'][0],
+                    'west'  => $data['bbox'][1],
+                    'north' => $data['bbox'][2],
+                    'east'  => $data['bbox'][3]
+                );
+            }
+
+            $streetNumber = null;
+            $streetName   = property_exists($data['address'], 'addressLine') ? (string) $data['address']->addressLine : '';
+            //$zipcode      = (string) $data['address']->postalCode;
+            $city         = (string) isset($data['address']->locality) ? $data['address']->locality : "";
+            $county       = (string) isset($data['address']->adminDistrict2) ? $data['address']->adminDistrict2 : "";
+            $region       = (string) isset($data['address']->adminDistrict) ? $data['address']->adminDistrict : "";
+            $country      = (string) isset($data['address']->countryRegion) ? $data['address']->countryRegion : "";
+
+            if ($city != "")
+            {
+                $geoData[] = array(
+                    //'latitude'      => $coordinates[0],
+                    //'longitude'     => $coordinates[1],
+                    //'bounds'        => $bounds,
+                    'streetNumber'  => $streetNumber,
+                    'streetName'    => $streetName,
+                    'city'          => empty($city) ? null : $city,
+                    //'zipcode'       => empty($zipcode) ? null : $zipcode,
+                    'county'        => empty($county) ? null : $county,
+                    'region'        => empty($region) ? null : $region,
+                    'country'       => empty($country) ? null : $country,
+                    'countryCode'   => null
+                );
+            }
+        }
+
+        return $geoData;
     }
 }

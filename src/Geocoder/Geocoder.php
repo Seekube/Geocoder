@@ -57,6 +57,19 @@ class Geocoder implements GeocoderInterface
         return $result;
     }
 
+    public function multiGeocode($value)
+    {
+        if (empty($value)) {
+            // let's save a request
+            return $this->returnResult(array());
+        }
+
+        $data   = $this->getProvider()->getMultiGeocodedData(trim($value));
+        //$result = $this->returnResult($data);
+
+        return $data;
+    }
+
     /**
      * {@inheritDoc}
      */
